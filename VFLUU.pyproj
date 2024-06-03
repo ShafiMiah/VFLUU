@@ -22,9 +22,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CNN.py" />
-    <Compile Include="CNNModel.py" />
-    <Compile Include="FlowerClient.py" />
-    <Compile Include="ObjectDetaction.py" />
+    <Compile Include="FeatureExtractorClient.py" />
+    <Compile Include="ObjectDetectionClient.py" />
+    <Compile Include="SplitYOLOModel.py" />
     <Compile Include="Test.py" />
     <Compile Include="VFLUU.py" />
   </ItemGroup>

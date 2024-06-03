@@ -20,48 +20,18 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 import matplotlib.patches as patches
 from ultralytics import YOLO
-
-from CNN import CNNNet
+from FeatureExtractorClient import FeatureExtractorClient
+from ObjectDetectionClient import DetectionHeadClient
+from SplitYOLOModel import DetectionHead, FeatureExtractor
 #endregion
 #region Global variables
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# DEVICE = torch.device('cpu')
-# DEVICE = torch.device('cuda')
-NUM_CLIENTS = 10
-BATCH_SIZE = 32
-# BATCH_SIZE = 4
+
+NUM_CLIENTS = 500
+BATCH_SIZE = 4
 #endregion
 #region load dataset
-#region cifar dataset for classification
-def loadCifar_datasets(batch_size: int):
-    fds = FederatedDataset(dataset="cifar10", partitioners={"train": NUM_CLIENTS})
 
-    def apply_transforms(batch):
-        # Instead of passing transforms to CIFAR10(..., transform=transform)
-        # we will use this function to dataset.with_transform(apply_transforms)
-        # The transforms object is exactly the same
-        transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ]
-        )
-        batch["img"] = [transform(img) for img in batch["img"]]
-        return batch
-
-    # Create train/val for each partition and wrap it into DataLoader
-    trainloaders = []
-    valloaders = []
-    for partition_id in range(NUM_CLIENTS):
-        partition = fds.load_partition(partition_id, "train")
-        partition = partition.with_transform(apply_transforms)
-        partition = partition.train_test_split(train_size=0.8, seed=42)
-        trainloaders.append(DataLoader(partition["train"], batch_size=batch_size))
-        valloaders.append(DataLoader(partition["test"], batch_size=batch_size))
-    testset = fds.load_split("test").with_transform(apply_transforms)
-    testloader = DataLoader(testset, batch_size=batch_size)
-    return trainloaders, valloaders, testloader
-#endregion
 #region coco dataset for object detection
 train_image_location = 'C:\\Shafi Personal\\Study\\Masters Thesis\\Thesis Project\\Implementation\\Test\\VFLTest\\VFLYOLO8\\datasets\\coco\\images\\train2017'
 train_image_annotation_file = 'C:\\Shafi Personal\\Study\\Masters Thesis\\Thesis Project\\Implementation\\Test\\VFLTest\\VFLYOLO8\\COCODataSet\\ExtractDataset\\annotations\\instances_train2017.json'
@@ -113,7 +83,7 @@ def loadCoco_datasets(num_clients: int):
 #endregion
 
 #trainloaders, valloaders, testloader = loadCoco_datasets(NUM_CLIENTS)
-trainloaders, valloaders, testloader = loadCifar_datasets(BATCH_SIZE)
+trainloaders, valloaders, testloader = loadCoco_datasets(NUM_CLIENTS)
 #endregion
 #region test and view object detection images
 # def show_image_with_boxes(image, targets):
@@ -131,28 +101,7 @@ trainloaders, valloaders, testloader = loadCifar_datasets(BATCH_SIZE)
 # # Display the first image in the batch along with its bounding boxes
 # show_image_with_boxes(images[0], targets[0])
 #endregion test
-#region view classification images
-# batch = next(iter(trainloaders[0]))
-# images, labels = batch["img"], batch["label"]
-# # Reshape and convert images to a NumPy array
-# # matplotlib requires images with the shape (height, width, 3)
-# images = images.permute(0, 2, 3, 1).numpy()
-# # Denormalize
-# images = images / 2 + 0.5
 
-# # Create a figure and a grid of subplots
-# fig, axs = plt.subplots(4, 8, figsize=(12, 6))
-
-# # Loop over the images and plot them
-# for i, ax in enumerate(axs.flat):
-#     ax.imshow(images[i])
-#     ax.set_title(trainloaders[0].dataset.features["label"].int2str([labels[i]])[0])
-#     ax.axis("off")
-
-# # Show the plot
-# fig.tight_layout()
-# plt.show()
-#endregion
 #region train and test model
 #object detection train
 def ObjectDetectionTrain(model, train_loader, optimizer, criterion, device):
@@ -192,45 +141,7 @@ def ObjectDetectionEvaluate(model, val_loader, device):
             total_samples += len(targets)
 
     return total_loss / total_samples
-#classification train
-def ClassificationTrain(net, trainloader, epochs: int, verbose=False):
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(net.parameters())
-    net.train()
-    for epoch in range(epochs):
-        correct, total, epoch_loss = 0, 0, 0.0
-        for batch in trainloader:
-            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE)
-            optimizer.zero_grad()
-            outputs = net(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            # Metrics
-            epoch_loss += loss
-            total += labels.size(0)
-            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
-        epoch_loss /= len(trainloader.dataset)
-        epoch_acc = correct / total
-        if verbose:
-            print(f"Epoch {epoch+1}: train loss {epoch_loss}, accuracy {epoch_acc}")
 
-
-def ClassificationTest(net, testloader):
-    criterion = torch.nn.CrossEntropyLoss()
-    correct, total, loss = 0, 0, 0.0
-    net.eval()
-    with torch.no_grad():
-        for batch in testloader:
-            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE)
-            outputs = net(images)
-            loss += criterion(outputs, labels).item()
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    loss /= len(testloader.dataset)
-    accuracy = correct / total
-    return loss, accuracy
 #endregion
 #region train the model test (single client)
 
@@ -249,85 +160,57 @@ def SimualtionObjectDetectionTrain():
 
     loss =ObjectDetectionEvaluate(model, testloader) 
     print(f"Final test set performance:\n\tloss {loss}")
-
-def SimualtionClassificationTrain():
-    trainloader = trainloaders[0]
-    valloader = valloaders[0]
-    net = CNNNet().to(DEVICE)
-
-    for epoch in range(5):
-        ClassificationTrain(net, trainloader, 1)
-        loss, accuracy = ClassificationTest(net, valloader)
-        print(f"Epoch {epoch+1}: validation loss {loss}, accuracy {accuracy}")
-
-    loss, accuracy = ClassificationTest(net, testloader)
-    print(f"Final test set performance:\n\tloss {loss}\n\taccuracy {accuracy}")
 #endregion
-#region Flower client-server interaction
-#parameters received from the server and update client
-def set_parameters_classification(net, parameters: List[np.ndarray]):
-    params_dict = zip(net.state_dict().keys(), parameters)
-    state_dict = OrderedDict({k: torch.Tensor(v) for k, v in params_dict})
-    net.load_state_dict(state_dict, strict=True)
-#get the updated model parameters from the local model    
-def get_parameters_classification(net) -> List[np.ndarray]:
-    return [val.cpu().numpy() for _, val in net.state_dict().items()]  
 
+#region Flower client classification
 
-#endregion
-#region Flower client
-class FlowerClientClassification(fl.client.NumPyClient):
-    def __init__(self, net, trainloader, valloader):
-        self.net = net
-        self.trainloader = trainloader
-        self.valloader = valloader
-
-    def get_parameters(self, config):
-        return get_parameters_classification(self.net)
-
-    def fit(self, parameters, config):
-        set_parameters_classification(self.net, parameters)
-        ClassificationTrain(self.net, self.trainloader, epochs=1)
-        return get_parameters_classification(self.net), len(self.trainloader), {}
-
-    def evaluate(self, parameters, config):
-        set_parameters_classification(self.net, parameters)
-        loss, accuracy = ClassificationTest(self.net, self.valloader)
-        return float(loss), len(self.valloader), {"accuracy": float(accuracy)}
-#flower client engine
-def client_fn(cid: str) -> FlowerClientClassification:
+#flower client engine and start client
+def client_fn_feature_extraction(cid: str) -> FeatureExtractorClient:
   
     # Load model
-    net = CNNNet().to(DEVICE)
+    yolo_model = YOLO('yolov8n.pt').to(DEVICE)  # Load YOLOv5 model
+    feature_extractor = FeatureExtractor(yolo_model)
     trainloader = trainloaders[int(cid)]
     valloader = valloaders[int(cid)]
     # Create a  single Flower client representing a single organization
-    return FlowerClientClassification(net, trainloader, valloader).to_client()
+    return FeatureExtractorClient(feature_extractor, trainloader, valloader).to_client()
+
+def client_fn_detection(cid: str) -> DetectionHeadClient:
+  
+    # Load model
+    yolo_model = YOLO('yolov8n.pt').to(DEVICE)  # Load YOLOv5 model
+    detection_head  = DetectionHead(yolo_model)
+    trainloader = trainloaders[int(cid)]
+    valloader = valloaders[int(cid)]
+    # Create a  single Flower client representing a single organization
+    return DetectionHeadClient(detection_head, trainloader, valloader).to_client()
+
+def start_client_featureextraction(cid: str):
+    fl.client.start_numpy_client(server_address="localhost:8080", client= client_fn_feature_extraction(str(cid)))
+def start_client_objectdetection(cid: str):
+    fl.client.client_fn_detection(server_address="localhost:8080", client= client_fn_detection(str(cid)))    
 #endregion
 
 #region server side strategy
     #flower server
-def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    # Multiply accuracy of each client by number of examples used
-    accuracies = [num_examples * m["accuracy"] for num_examples, m in metrics]
-    examples = [num_examples for num_examples, _ in metrics]
-    # Aggregate and return custom metric (weighted average)
-    return {"accuracy": sum(accuracies) / sum(examples)}
 def start_server():
     fl.server.start_server(
-    server_address="localhost:8080",
-    config={"num_rounds": 3},
-    strategy=fl.server.strategy.FedAvg(
-        fraction_fit=0.5,
-        fraction_eval=0.5,
-        min_fit_clients=2,
-        min_eval_clients=2,
-        min_available_clients=NUM_CLIENTS,
-        # evaluate_metrics_aggregation_fn=weighted_average
-    )
-    )
-def start_client(cid: str):
-    fl.client.start_numpy_client(server_address="localhost:8080", client= client_fn(str(cid)))
+                           server_address = "localhost:8080",
+                           config = {"num_rounds": 3 },
+                           # strategy = fl.server.strategy.FedAvg(
+                           #      fraction_fit = 0.5,
+                           #      fraction_eval = 0.5,
+                           #      min_fit_clients = 2,
+                           #      min_eval_clients = 2,
+                           #      min_available_clients = NUM_CLIENTS,
+                           # )
+                           strategy = fl.server.strategy.FedAvg(
+                                        min_fit_clients=2,
+                                        min_eval_clients=2,
+                                        min_available_clients=2,
+                                    )
+                           )
+
 
     
 def SimulationStrategy():
@@ -339,13 +222,12 @@ def SimulationStrategy():
     #     min_available_clients=10,  # Wait until all 10 clients are available
     # )
     start_server()
-    for i in range(NUM_CLIENTS):
-        start_client(str(i))
+    start_client_featureextraction(str(0))
+    start_client_featureextraction(str(1))
+    # for i in range(NUM_CLIENTS):
+    #     start_client_featureextraction(str(i))
 #endregion
 if __name__ == "__main__":
     #This COCO dataset is crashing now, look at this later
-    #SimualtionObjectDetectionTrain()
-    #Classification task
-   #SimualtionClassificationTrain()
    SimulationStrategy() 
 x=1
