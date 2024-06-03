@@ -21,7 +21,6 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="CNN.py" />
     <Compile Include="FeatureExtractorClient.py" />
     <Compile Include="ObjectDetectionClient.py" />
     <Compile Include="SplitYOLOModel.py" />
