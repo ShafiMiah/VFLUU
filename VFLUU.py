@@ -2,6 +2,8 @@
 #region
 #endregion
 #region Library
+import multiprocessing
+import time
 from collections import OrderedDict
 from typing import List, Tuple
 import matplotlib.pyplot as plt
@@ -146,7 +148,7 @@ def ObjectDetectionEvaluate(model, val_loader, device):
 #region train the model test (single client)
 
 def SimualtionObjectDetectionTrain():
-    #model = YOLO('yolov8n.pt').to(DEVICE)
+    #model = YOLO('yolov8s.pt').to(DEVICE)
     model = YOLO('yolov8.yaml').to(DEVICE)
     criterion = torch.nn.MSELoss()
     # Optimizer
@@ -168,7 +170,8 @@ def SimualtionObjectDetectionTrain():
 def client_fn_feature_extraction(cid: str) -> FeatureExtractorClient:
   
     # Load model
-    yolo_model = YOLO('yolov8n.pt').to(DEVICE)  # Load YOLOv5 model
+    print("FeatureExtractorClient calling")
+    yolo_model = YOLO('C:\\Shafi Personal\\Study\\Masters Thesis\\Thesis Project\\Implementation\\VFL\\VFLUU\\yolov8s.pt')  # Load YOLOv5 model
     feature_extractor = FeatureExtractor(yolo_model)
     trainloader = trainloaders[int(cid)]
     valloader = valloaders[int(cid)]
@@ -178,7 +181,8 @@ def client_fn_feature_extraction(cid: str) -> FeatureExtractorClient:
 def client_fn_detection(cid: str) -> DetectionHeadClient:
   
     # Load model
-    yolo_model = YOLO('yolov8n.pt').to(DEVICE)  # Load YOLOv5 model
+    print("DetectionHeadClient calling")
+    yolo_model = YOLO('C:\\Shafi Personal\\Study\\Masters Thesis\\Thesis Project\\Implementation\\VFL\\VFLUU\\yolov8s.pt')  # Load YOLOv5 model
     detection_head  = DetectionHead(yolo_model)
     trainloader = trainloaders[int(cid)]
     valloader = valloaders[int(cid)]
@@ -188,15 +192,16 @@ def client_fn_detection(cid: str) -> DetectionHeadClient:
 def start_client_featureextraction(cid: str):
     fl.client.start_numpy_client(server_address="localhost:8080", client= client_fn_feature_extraction(str(cid)))
 def start_client_objectdetection(cid: str):
-    fl.client.client_fn_detection(server_address="localhost:8080", client= client_fn_detection(str(cid)))    
+    fl.client.start_numpy_client(server_address="localhost:8081", client= client_fn_detection(str(cid)))    
 #endregion
 
 #region server side strategy
     #flower server
 def start_server():
+    print("Server calling")
     fl.server.start_server(
                            server_address = "localhost:8080",
-                           config = {"num_rounds": 3 },
+                           # config = {"num_rounds": 3 },
                            # strategy = fl.server.strategy.FedAvg(
                            #      fraction_fit = 0.5,
                            #      fraction_eval = 0.5,
@@ -211,19 +216,29 @@ def start_server():
                                     )
                            )
 
-
-    
+ 
+   
 def SimulationStrategy():
-    # strategy = fl.server.strategy.FedAvg(
-    #     fraction_fit=1.0,  # Sample 100% of available clients for training
-    #     # fraction_evaluate=0.5,  # Sample 50% of available clients for evaluation
-    #     min_fit_clients=10,  # Never sample less than 10 clients for training
-    #     min_evaluate_clients=5,  # Never sample less than 5 clients for evaluation
-    #     min_available_clients=10,  # Wait until all 10 clients are available
-    # )
-    start_server()
-    start_client_featureextraction(str(0))
-    start_client_featureextraction(str(1))
+    model = YOLO('yolov8s.pt')
+    model.save('yolov8s.pt')
+    # with concurrent.futures.ThreadPoolExecutor() as executor:
+    #         # Submit tasks to the executor
+    #         future1 = executor.submit(start_server())
+    #         future2 = executor.submit( start_client_featureextraction(str(0)))
+    #         future3 = executor.submit(start_client_featureextraction(str(0)))
+    # start_server()        
+    # start_client_featureextraction(str(0))
+    # start_client_featureextraction(str(1))
+    server_process = multiprocessing.Process(target=start_server)
+    extraction_process = multiprocessing.Process(target=start_client_featureextraction(str(0)))
+    detection_process = multiprocessing.Process(target=start_client_objectdetection(str(0)))
+    server_process.start()
+    extraction_process.start()
+    detection_process.start()
+
+    server_process.join()
+    extraction_process.join()
+    detection_process.join()
     # for i in range(NUM_CLIENTS):
     #     start_client_featureextraction(str(i))
 #endregion

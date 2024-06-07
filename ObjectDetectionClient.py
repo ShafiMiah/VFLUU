@@ -9,7 +9,7 @@ class DetectionHeadClient(fl.client.NumPyClient):
         self.trainloader = trainloader
         self.testloader = testloader
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)  # Ensure the optimizer is initialized with model parameters
 
     def get_parameters(self):
         return [val.cpu().numpy() for val in self.model.state_dict().values()]
@@ -24,8 +24,7 @@ class DetectionHeadClient(fl.client.NumPyClient):
         self.model.train()
         for images, targets in self.trainloader:
             self.optimizer.zero_grad()
-             # Note: Adjust to get features from Feature extractor Client 1
-            features = self.model(images) 
+            features = self.model(images)  # Adjust to get features from Client 1
             loss = self.criterion(features, targets)
             loss.backward()
             self.optimizer.step()
@@ -37,8 +36,7 @@ class DetectionHeadClient(fl.client.NumPyClient):
         correct, total = 0, 0
         with torch.no_grad():
             for images, targets in self.testloader:
-                # Note: Adjust to get features from Feature extractor Client 1
-                outputs = self.model(images)  
+                outputs = self.model(images)  # Adjust to get features from Client 1
                 loss = self.criterion(outputs, targets)
                 correct += (outputs.argmax(1) == targets).sum().item()
                 total += targets.size(0)
